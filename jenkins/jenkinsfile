@@ -1,0 +1,104 @@
+properties(
+    [parameters([
+        string(defaultValue: '1', name: 'TIME_SERVICE_VERSION'),
+        string(defaultValue: '1', name: 'DOG_FACTS_SERVICE_VERSION')
+    ])])
+
+def SERVICE = "webapps"
+def BRANCH = "main"
+
+pipeline {
+    agent {
+        kubernetes {
+            yaml '''
+apiVersion: v1
+kind: Pod
+spec:
+  containers:
+  - name: ubuntu
+    image: ubuntu:16.04
+    securityContext:
+      privileged: true
+    command:
+    - sleep
+    args:
+    - infinity
+'''
+            defaultContainer 'ubuntu'
+        }
+    }
+    stages {
+        stage('Checkout') {
+            steps {
+                checkout(
+                changelog: false,
+                poll: false,
+                scm: [
+                    $class: 'GitSCM',
+                    branches: [[ name: "*/${BRANCH}" ]],
+                    doGenerateSubmoduleConfigurations: false,
+                    extensions: [],
+                    submoduleCfg: [],
+                    userRemoteConfigs: [[
+                        url: "https://github.com/caffeine-zz/${SERVICE}-deploy.git"
+                    ]]
+                    ]
+                )
+            }
+        }
+        
+        stage('Get helm') {
+            steps {
+                sh """
+                apt update
+                apt install curl -y
+                curl https://baltocdn.com/helm/signing.asc | apt-key add -
+                apt-get install apt-transport-https --yes
+                echo "deb https://baltocdn.com/helm/stable/debian/ all main" |\
+                tee /etc/apt/sources.list.d/helm-stable-debian.list
+                apt-get update
+                apt-get install helm -y
+                
+                """
+            }
+        }
+        
+        stage('Deploy apps') {
+            steps {
+                dir('helm') {
+                    sh """
+                    helm upgrade --install ${SERVICE} \
+                    -n vtest \
+                    -f ${SERVICE}/values.yaml \
+                    ${SERVICE} \
+                    --set time-service.image.tag=$TIME_SERVICE_VERSION \
+                    --set dog-facts-service.image.tag=$DOG_FACTS_SERVICE_VERSION
+                    """
+                }
+            }
+        }
+        
+        stage('Check apps') {
+            steps {
+                script {
+                    webappsUrls = ["webapps-dog-facts-service.vtest.svc.cluster.local",
+                                   "webapps-time-service.vtest.svc.cluster.local"]
+                               
+                    webappsUrls.each() {
+                        httpStatus = sh(script: "curl -s --max-time 5 --insecure -w '%{http_code}' \
+                        ${it} -o /dev/null", returnStdout: true)
+                    
+                        if (httpStatus != "200" && httpStatus != "201" ) {
+                            echo "Service error with status code = ${httpStatus} when calling ${it}"
+                            sh "exit 1"
+                        } else {
+                            responseBody = sh(script: "curl -s ${it}", returnStdout: true)
+                            echo "Service OK with status: ${httpStatus}"
+                            echo "Service response: ${responseBody}"
+                        }
+                    }  
+                }
+            }
+        }
+    }
+}
