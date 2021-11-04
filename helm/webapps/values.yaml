@@ -1,0 +1,7 @@
+time-service:
+  image:
+    tag:
+    
+dog-facts-service:
+  image:
+    tag:    
