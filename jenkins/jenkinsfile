@@ -1,5 +1,6 @@
 properties(
     [parameters([
+        string(defaultValue: 'webapps', name: 'NAMESPACE'),
         string(defaultValue: '1', name: 'TIME_SERVICE_VERSION'),
         string(defaultValue: '1', name: 'DOG_FACTS_SERVICE_VERSION')
     ])])
@@ -58,7 +59,6 @@ spec:
                 tee /etc/apt/sources.list.d/helm-stable-debian.list
                 apt-get update
                 apt-get install helm -y
-                
                 """
             }
         }
@@ -68,12 +68,13 @@ spec:
                 dir('helm') {
                     sh """
                     helm upgrade --install ${SERVICE} \
-                    -n vtest \
+                    -n $NAMESPACE \
                     -f ${SERVICE}/values.yaml \
                     ${SERVICE} \
                     --set time-service.image.tag=$TIME_SERVICE_VERSION \
                     --set dog-facts-service.image.tag=$DOG_FACTS_SERVICE_VERSION
                     """
+                    sh 'sleep 10'
                 }
             }
         }
@@ -90,6 +91,12 @@ spec:
                     
                         if (httpStatus != "200" && httpStatus != "201" ) {
                             echo "Service error with status code = ${httpStatus} when calling ${it}"
+                            echo "Performing the rollback"
+                            dir('helm') {
+                                sh """
+                                helm rollback ${SERVICE} -n $NAMESPACE
+                                """
+                            }    
                             sh "exit 1"
                         } else {
                             responseBody = sh(script: "curl -s ${it}", returnStdout: true)
