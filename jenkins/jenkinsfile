@@ -79,11 +79,11 @@ spec:
             }
         }
         
-        stage('Check apps') {
+        stage('Test apps') {
             steps {
                 script {
-                    webappsUrls = ["webapps-dog-facts-service.vtest.svc.cluster.local",
-                                   "webapps-time-service.vtest.svc.cluster.local"]
+                    webappsUrls = ["webapps-dog-facts-service.${NAMESPACE}.svc.cluster.local",
+                                   "webapps-time-service.${NAMESPACE}.svc.cluster.local"]
                                
                     webappsUrls.each() {
                         httpStatus = sh(script: "curl -s --max-time 5 --insecure -w '%{http_code}' \
